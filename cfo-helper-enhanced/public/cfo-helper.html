@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Runway | CFO Helper Agent</title>
+
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* Custom styles to make the app feel premium */
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .chart-container {
+            position: relative;
+            height: 350px;
+            width: 100%;
+        }
+        .spinner {
+            border: 2px solid #4a5568;
+            border-top: 2px solid #3b82f6;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* For toast notifications */
+        .toast {
+            visibility: hidden;
+            min-width: 250px;
+            margin-left: -125px;
+            background-color: #f1f5f9; /* slate-100 */
+            color: #1e293b; /* slate-800 */
+            text-align: center;
+            border-radius: 8px;
+            padding: 16px;
+            position: fixed;
+            z-index: 100;
+            left: 50%;
+            bottom: 30px;
+            font-size: 17px;
+            opacity: 0;
+            transition: opacity 0.3s, bottom 0.3s, visibility 0.3s;
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            border: 1px solid #e2e8f0; /* slate-200 */
+        }
+        .dark .toast {
+            background-color: #334155; /* slate-700 */
+            color: #f1f5f9; /* slate-100 */
+            border-color: #475569; /* slate-600 */
+        }
+        .toast.show {
+            visibility: visible;
+            opacity: 1;
+            bottom: 50px;
+        }
+        /* Custom scrollbar for chat/insights */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9; /* slate-100 */
+        }
+        .dark .custom-scrollbar::-webkit-scrollbar-track {
+            background: #1e293b; /* slate-800 */
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1; /* slate-300 */
+            border-radius: 3px;
+        }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #475569; /* slate-600 */
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; /* slate-400 */
+        }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #64748b; /* slate-500 */
+        }
+        /* Modal styles */
+        .modal-backdrop {
+            transition: opacity 0.3s ease;
+        }
+        .modal-content {
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+    </style>
+     <script>
+        // Set theme on page load
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark')
+        } else {
+            document.documentElement.classList.remove('dark')
+        }
+    </script>
+</head>
+<body class="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-white flex items-center justify-center min-h-screen p-4 sm:p-6 lg:p-8 transition-colors duration-300">
+
+    <!-- Shared Scenario Banner -->
+    <div id="shared-scenario-banner" class="hidden fixed top-0 left-0 right-0 bg-indigo-600 text-white p-3 text-center z-50">
+        You are viewing a shared scenario. <button id="clear-shared-scenario" class="ml-4 font-bold underline">Start a new session</button>
+    </div>
+
+    <!-- Main Application Card -->
+    <div class="w-full max-w-screen-2xl bg-white/80 dark:bg-slate-800/50 backdrop-blur-sm border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-6 sm:p-8 space-y-6">
+
+        <!-- Header Section -->
+        <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+             <div>
+                <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">Runway</h1>
+                <p class="text-slate-500 dark:text-slate-400">Your Strategic CFO Co-Pilot</p>
+            </div>
+             <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2 text-sm">
+                    <span class="relative flex h-3 w-3"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span>
+                    <span class="text-slate-600 dark:text-slate-300">Live Data Sync</span>
+                </div>
+                <div id="usage-counter" class="text-sm bg-slate-200 dark:bg-slate-700/50 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-300">Scenarios: 0 | Reports: 0</div>
+                <button id="theme-toggle" class="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">
+                    <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
+                    <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 5.05A1 1 0 016.465 3.636l.707.707a1 1 0 01-1.414 1.414l-.707-.707a1 1 0 010-1.414zM5 11a1 1 0 100-2H4a1 1 0 100 2h1zM8 16a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM3.293 13.293a1 1 0 011.414 0l.707.707a1 1 0 01-1.414 1.414l-.707-.707a1 1 0 010-1.414z"></path></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content Grid -->
+        <main class="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+
+            <!-- Left Column: Controls & AI -->
+            <div class="lg:col-span-1 xl:col-span-1 space-y-6">
+                <!-- Conversational Builder -->
+                <div class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-3 h-[250px] flex flex-col">
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">🤖 Conversational Builder</h2>
+                    <div id="chat-history" class="flex-grow overflow-y-auto custom-scrollbar pr-2 text-sm space-y-3"></div>
+                    <div class="relative">
+                        <input type="text" id="chat-input" placeholder="e.g., Hire a designer for 1L..." class="w-full bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md pl-3 pr-10 py-2 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <button id="chat-send" class="absolute inset-y-0 right-0 px-3 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-white">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Advanced Headcount -->
+                <div class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-3">
+                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">📈 Advanced Headcount</h2>
+                     <div id="headcount-list" class="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-2"></div>
+                     <button id="add-role-button" class="w-full text-sm bg-slate-200 hover:bg-slate-300 dark:bg-slate-600 dark:hover:bg-slate-500 transition-colors duration-200 text-slate-700 dark:text-white font-semibold py-2 px-4 rounded-lg">Add Role</button>
+                </div>
+
+                <!-- Manual Scenario Controls -->
+                <div class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-4">
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Manual Controls</h2>
+                    <div class="space-y-3">
+                        <label for="monthly-spend" class="font-medium text-sm text-slate-600 dark:text-slate-300">New Monthly Spending</label>
+                        <div class="relative"><span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 pointer-events-none">₹</span><input type="number" id="monthly-spend" value="0" min="0" step="1000" class="w-full bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md pl-7 py-2 text-slate-900 dark:text-white"></div>
+                    </div>
+                    <div class="space-y-3">
+                        <label for="one-time-spend" class="font-medium text-sm text-slate-600 dark:text-slate-300">One-Time Spend</label>
+                        <div class="relative"><span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 pointer-events-none">₹</span><input type="number" id="one-time-spend" value="0" min="0" step="10000" class="w-full bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md pl-7 py-2 text-slate-900 dark:text-white"></div>
+                    </div>
+                    <div class="space-y-3">
+                        <label for="price-increase" class="font-medium text-sm text-slate-600 dark:text-slate-300">Product Price Change</label>
+                        <div class="relative"><input type="number" id="price-increase" value="0" step="1" class="w-full bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md pr-7 pl-3 py-2 text-slate-900 dark:text-white"><span class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 pointer-events-none">%</span></div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Center Column: Dashboard & Forecast -->
+            <div class="lg:col-span-2 xl:col-span-2 space-y-6">
+                <!-- Key Metrics & Scenarios -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+                        <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Cash Runway (Current)</p>
+                        <div id="runway-metric" class="text-3xl font-bold text-slate-900 dark:text-white">--</div>
+                    </div>
+                    <div class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+                        <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Monthly Burn (Current)</p>
+                        <div id="burn-metric" class="text-2xl font-semibold text-slate-700 dark:text-slate-200">--</div>
+                    </div>
+                    <div id="scenario-a-card" class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 transition-all duration-300">
+                        <div class="flex justify-between items-center"><p class="font-semibold text-sky-500 dark:text-sky-400">Scenario A</p><button id="clear-scenario-a" class="hidden text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs">Clear</button></div>
+                        <p id="scenario-a-runway" class="text-lg font-bold text-slate-900 dark:text-white mt-1">Not Saved</p>
+                    </div>
+                    <div id="scenario-b-card" class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 transition-all duration-300">
+                        <div class="flex justify-between items-center"><p class="font-semibold text-teal-500 dark:text-teal-400">Scenario B</p><button id="clear-scenario-b" class="hidden text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs">Clear</button></div>
+                        <p id="scenario-b-runway" class="text-lg font-bold text-slate-900 dark:text-white mt-1">Not Saved</p>
+                    </div>
+                </div>
+                
+                <!-- Chart -->
+                <div class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 sm:p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Cash Balance Forecast</h3>
+                        <div class="flex gap-2">
+                             <button id="run-risk-sim" class="text-sm bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-500 transition-colors duration-200 text-white font-semibold py-1 px-3 rounded-lg">🎲 Run Risk Sim</button>
+                             <button id="clear-risk-sim" class="hidden text-sm bg-slate-500 hover:bg-slate-600 dark:bg-slate-600 dark:hover:bg-slate-500 transition-colors duration-200 text-white font-semibold py-1 px-3 rounded-lg">Clear Sim</button>
+                        </div>
+                    </div>
+                    <div class="chart-container"><canvas id="runway-chart"></canvas></div>
+                </div>
+
+                <!-- Actions -->
+                 <div class="grid grid-cols-2 gap-4">
+                    <button id="save-scenario-a" class="w-full bg-sky-500 hover:bg-sky-600 dark:bg-sky-600 dark:hover:bg-sky-500 transition-colors duration-200 text-white font-semibold py-3 px-4 rounded-lg">Save as Scenario A</button>
+                    <button id="save-scenario-b" class="w-full bg-teal-500 hover:bg-teal-600 dark:bg-teal-600 dark:hover:bg-teal-500 transition-colors duration-200 text-white font-semibold py-3 px-4 rounded-lg">Save as Scenario B</button>
+                    <button id="generate-memo-button" class="w-full bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-500 transition-colors duration-200 text-white font-semibold py-3 px-4 rounded-lg">✨ Generate Memo</button>
+                    <button id="share-button" class="w-full bg-green-500 hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-500 transition-colors duration-200 text-white font-semibold py-3 px-4 rounded-lg">Get Shareable Link</button>
+                    <!-- Enhanced Export Functionality -->
+                    <button id="export-data-btn" class="w-full bg-purple-500 hover:bg-purple-600 dark:bg-purple-600 dark:hover:bg-purple-500 transition-colors duration-200 text-white font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Export Data
+                    </button>
+                    <button id="reset-button" class="w-full bg-slate-500 hover:bg-slate-600 dark:bg-slate-600 dark:hover:bg-slate-500 transition-colors duration-200 text-white font-semibold py-3 px-4 rounded-lg">Reset All</button>
+                </div>
+            </div>
+
+             <!-- Right Column: Enhanced Features -->
+            <div class="lg:col-span-3 xl:col-span-1 space-y-6">
+                 <!-- AI Insights -->
+                 <div class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-3 h-[300px] flex flex-col">
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">⚠️ AI Insights & Alerts</h2>
+                    <div id="insights-panel" class="flex-grow overflow-y-auto custom-scrollbar pr-2 text-sm space-y-3">
+                         <p class="text-slate-500 dark:text-slate-400">AI is monitoring your data stream...</p>
+                    </div>
+                 </div>
+
+                 <!-- Budget Tracker -->
+                 <div class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-3">
+                    <h3 class="text-lg font-semibold text-slate-900 dark:text-white">📊 Budget vs Actual Tracker</h3>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">Track spending against budgeted amounts by category. Monitor budget variance and identify overspending areas.</p>
+                    <div class="bg-gradient-to-r from-indigo-500 to-purple-600 text-white p-3 rounded-lg text-center">
+                        <p class="text-sm font-medium">🚀 Enhanced Feature</p>
+                        <p class="text-xs opacity-90">Advanced budget tracking capabilities</p>
+                    </div>
+                 </div>
+
+                 <!-- KPI Dashboard -->
+                 <div class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-3">
+                    <h3 class="text-lg font-semibold text-slate-900 dark:text-white">📈 Key Performance Indicators</h3>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">Monitor critical financial KPIs including MRR, CAC, Gross Margin, and Burn Multiple with target tracking.</p>
+                    <div class="bg-gradient-to-r from-indigo-500 to-purple-600 text-white p-3 rounded-lg text-center">
+                        <p class="text-sm font-medium">🚀 Enhanced Feature</p>
+                        <p class="text-xs opacity-90">Real-time KPI monitoring</p>
+                    </div>
+                 </div>
+
+                 <!-- Cash Flow Categories -->
+                 <div class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-3">
+                    <h3 class="text-lg font-semibold text-slate-900 dark:text-white">💰 Cash Flow Categories</h3>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">Categorize and analyze cash inflows and outflows by department for better financial visibility.</p>
+                    <div class="bg-gradient-to-r from-indigo-500 to-purple-600 text-white p-3 rounded-lg text-center">
+                        <p class="text-sm font-medium">🚀 Enhanced Feature</p>
+                        <p class="text-xs opacity-90">Advanced cash flow analysis</p>
+                    </div>
+                 </div>
+
+                 <!-- Smart Alerts -->
+                 <div class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-3">
+                    <h3 class="text-lg font-semibold text-slate-900 dark:text-white">🔔 Smart Alerts & Notifications</h3>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">Set up custom alerts for key financial thresholds and receive notifications when limits are exceeded.</p>
+                    <div class="bg-gradient-to-r from-indigo-500 to-purple-600 text-white p-3 rounded-lg text-center">
+                        <p class="text-sm font-medium">🚀 Enhanced Feature</p>
+                        <p class="text-xs opacity-90">Intelligent alert system</p>
+                    </div>
+                 </div>
+            </div>
+
+        </main>
+    </div>
+    
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Memo Modal -->
+    <div id="memo-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+        <div id="memo-backdrop" class="fixed inset-0 bg-black/60 modal-backdrop opacity-0"></div>
+        <div id="memo-content" class="modal-content bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg w-full max-w-2xl p-6 relative opacity-0 transform scale-95">
+            <h2 class="text-2xl font-bold mb-4 text-slate-900 dark:text-white">Generated Stakeholder Memo</h2>
+            <div id="memo-output" class="bg-slate-200/50 dark:bg-slate-900/50 rounded-md p-4 max-h-[50vh] overflow-y-auto custom-scrollbar">
+                <div id="memo-spinner" class="flex justify-center items-center h-24">
+                    <div class="spinner"></div>
+                </div>
+                <pre id="memo-text" class="text-slate-700 dark:text-slate-300 whitespace-pre-wrap font-sans"></pre>
+            </div>
+            <div class="mt-6 flex justify-end gap-4">
+                <button id="copy-memo-button" class="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 px-4 rounded-lg">Copy to Clipboard</button>
+                <button id="close-memo-button" class="bg-slate-600 hover:bg-slate-500 text-white font-semibold py-2 px-4 rounded-lg">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Enhanced JavaScript Application Logic -->
+    <script type="module">
+        document.addEventListener('DOMContentLoaded', async () => {
+            // --- INITIAL FINANCIAL DATA ---
+            const initialData = { bankBalance: 5000000, monthlyRevenue: 800000, monthlyCosts: 1200000 };
+            
+            // --- STATE MANAGEMENT ---
+            let scenarioCounter = 0, reportCounter = 0;
+            let savedScenarioA = null, savedScenarioB = null;
+            let headcount = [];
+            let mockTransactions = [];
+
+            // --- DOM ELEMENT REFERENCES ---
+            const elements = {
+                spendInput: document.getElementById('monthly-spend'),
+                oneTimeSpendInput: document.getElementById('one-time-spend'),
+                priceInput: document.getElementById('price-increase'),
+                resetButton: document.getElementById('reset-button'),
+                usageCounter: document.getElementById('usage-counter'),
+                runwayMetric: document.getElementById('runway-metric'), 
+                burnMetric: document.getElementById('burn-metric'),
+                chartCanvas: document.getElementById('runway-chart'),
+                saveScenarioA: document.getElementById('save-scenario-a'), 
+                saveScenarioB: document.getElementById('save-scenario-b'),
+                scenarioARunway: document.getElementById('scenario-a-runway'), 
+                scenarioBRunway: document.getElementById('scenario-b-runway'),
+                clearScenarioA: document.getElementById('clear-scenario-a'), 
+                clearScenarioB: document.getElementById('clear-scenario-b'),
+                shareButton: document.getElementById('share-button'), 
+                sharedBanner: document.getElementById('shared-scenario-banner'),
+                clearShared: document.getElementById('clear-shared-scenario'), 
+                toast: document.getElementById('toast'),
+                chatInput: document.getElementById('chat-input'),
+                chatSend: document.getElementById('chat-send'),
+                chatHistory: document.getElementById('chat-history'),
+                addRoleButton: document.getElementById('add-role-button'),
+                headcountList: document.getElementById('headcount-list'),
+                insightsPanel: document.getElementById('insights-panel'),
+                runRiskSim: document.getElementById('run-risk-sim'),
+                clearRiskSim: document.getElementById('clear-risk-sim'),
+                generateMemoButton: document.getElementById('generate-memo-button'),
+                memoModal: document.getElementById('memo-modal'),
+                memoBackdrop: document.getElementById('memo-backdrop'),
+                memoContent: document.getElementById('memo-content'),
+                memoSpinner: document.getElementById('memo-spinner'),
+                memoText: document.getElementById('memo-text'),
+                copyMemoButton: document.getElementById('copy-memo-button'),
+                closeMemoButton: document.getElementById('close-memo-button'),
+                themeToggle: document.getElementById('theme-toggle'),
+                themeToggleDarkIcon: document.getElementById('theme-toggle-dark-icon'),
+                themeToggleLightIcon: document.getElementById('theme-toggle-light-icon'),
+                exportDataBtn: document.getElementById('export-data-btn'),
+            };
+
+            const allInputs = [elements.spendInput, elements.oneTimeSpendInput, elements.priceInput];
+            
+            // --- THEME MANAGEMENT ---
+            function updateThemeIcons(isDark) {
+                if(isDark) {
+                    elements.themeToggleDarkIcon.classList.remove('hidden');
+                    elements.themeToggleLightIcon.classList.add('hidden');
+                } else {
+                    elements.themeToggleDarkIcon.classList.add('hidden');
+                    elements.themeToggleLightIcon.classList.remove('hidden');
+                }
+            }
+            
+            elements.themeToggle.addEventListener('click', () => {
+                document.documentElement.classList.toggle('dark');
+                const isDark = document.documentElement.classList.contains('dark');
+                localStorage.theme = isDark ? 'dark' : 'light';
+                updateThemeIcons(isDark);
+                // Update chart colors on theme change
+                const tickColor = isDark ? '#94a3b8' : '#475569';
+                const labelColor = isDark ? '#d1d5db' : '#334155';
+                if(runwayChart && runwayChart.options) {
+                    runwayChart.options.scales.y.ticks.color = tickColor;
+                    runwayChart.options.scales.x.ticks.color = tickColor;
+                    runwayChart.options.plugins.legend.labels.color = labelColor;
+                    runwayChart.update();
+                }
+            });
+
+            // --- CHART.JS SETUP ---
+            const ctx = elements.chartCanvas.getContext('2d');
+            const chartLabels = Array.from({ length: 25 }, (_, i) => `M${i}`);
+            let runwayChart;
+
+            function createChart(isRiskSim = false) {
+                 if (runwayChart && runwayChart.destroy) runwayChart.destroy();
+                 const isDark = document.documentElement.classList.contains('dark');
+                 const tickColor = isDark ? '#94a3b8' : '#475569';
+                 const labelColor = isDark ? '#d1d5db' : '#334155';
+
+                 const datasets = [
+                    { label: 'Base Case', data: [], borderColor: 'rgba(107, 114, 128, 0.8)', borderWidth: 2, pointRadius: 0, tension: 0.3 },
+                    { label: 'Scenario A', data: [], borderColor: 'rgba(56, 189, 248, 1)', borderWidth: 3, pointRadius: 0, tension: 0.3, borderDash: [5, 5], hidden: true },
+                    { label: 'Scenario B', data: [], borderColor: 'rgba(45, 212, 191, 1)', borderWidth: 3, pointRadius: 0, tension: 0.3, borderDash: [5, 5], hidden: true },
+                 ];
+                 
+                 if (isRiskSim) {
+                     datasets.push({ label: 'Worst Case', data: [], fill: '+1', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'transparent', pointRadius: 0 });
+                     datasets.push({ label: 'Best Case', data: [], fill: false, backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: 'transparent', pointRadius: 0 });
+                     datasets.push({ label: 'Likely', data: [], borderColor: 'rgba(252, 211, 77, 1)', borderWidth: 3, pointRadius: 0, tension: 0.3, fill: '-1' });
+                 } else {
+                     const currentFillColor = isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.2)';
+                     datasets.push({ label: 'Current', data: [], borderColor: 'rgba(99, 102, 241, 1)', backgroundColor: currentFillColor, borderWidth: 3, pointRadius: 0, tension: 0.3, fill: true });
+                 }
+
+                 runwayChart = new Chart(ctx, {
+                     type: 'line',
+                     data: { labels: chartLabels, datasets: datasets },
+                     options: { 
+                         responsive: true, 
+                         maintainAspectRatio: false, 
+                         scales: { 
+                             y: { beginAtZero: true, ticks: { color: tickColor } }, 
+                             x: { ticks: { color: tickColor } } 
+                         }, 
+                         plugins: { 
+                             legend: { position: 'top', align: 'end', labels: { color: labelColor } } 
+                         } 
+                     }
+                 });
+            }
+
+            // --- UTILITY FUNCTIONS ---
+            function showToast(message) { 
+                elements.toast.textContent = message;
+                elements.toast.classList.add("show");
+                setTimeout(() => { elements.toast.classList.remove("show"); }, 3000);
+             }
+            const formatRunway = (months) => isFinite(months) ? `${months.toFixed(1)} mo` : 'Infinite ∞';
+            const formatCurrency = (val) => `₹${new Intl.NumberFormat('en-IN', { maximumSignificantDigits: 3 }).format(val)}`;
+
+            // --- MOCK AI INTEGRATION (since we can't use real API keys in static HTML) ---
+            async function mockGeminiCall(prompt, isJson = false) {
+                // Simulate API delay
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                if (prompt.includes('financial scenario parser')) {
+                    return JSON.stringify({
+                        monthlySpend: 50000,
+                        oneTimeSpend: 0,
+                        priceIncrease: 0,
+                        newHires: [],
+                        analysis: "I've updated your monthly spending to ₹50,000 as requested."
+                    });
+                }
+                
+                if (prompt.includes('CEO writing a brief memo')) {
+                    return `Subject: Q4 Financial Planning Update
+
+Dear Board Members,
+
+I'm writing to update you on our proposed Q4 financial initiatives and their projected impact on our key metrics.
+
+**Proposed Changes:**
+- Additional monthly spending of ₹50,000 for strategic initiatives
+- No significant one-time expenditures planned
+- Maintaining current pricing strategy
+
+**Financial Impact:**
+- Current runway extends to 12.5 months under base case scenario
+- With proposed changes, runway adjusts to 11.8 months
+- Monthly burn rate increases from ₹400,000 to ₹450,000
+
+These strategic investments position us for accelerated growth while maintaining healthy cash management practices.
+
+Best regards,
+CEO`;
+                }
+                
+                return "Mock AI response generated successfully.";
+            }
+
+            // --- CORE LOGIC & FEATURES ---
+
+            // ** 1. Conversational Builder **
+            async function handleChat() {
+                const query = elements.chatInput.value;
+                if (!query) return;
+                elements.chatInput.value = '';
+                addToChatHistory(query, 'user');
+
+                const resultJson = await mockGeminiCall(`financial scenario parser: ${query}`, true);
+
+                if (resultJson) {
+                    try {
+                        const parsed = JSON.parse(resultJson);
+                        applyInputs({
+                            monthlySpend: parsed.monthlySpend || elements.spendInput.value,
+                            oneTimeSpend: parsed.oneTimeSpend || elements.oneTimeSpendInput.value,
+                            priceIncrease: parsed.priceIncrease || elements.priceInput.value,
+                        });
+                        if (parsed.newHires && parsed.newHires.length > 0) {
+                            parsed.newHires.forEach(hire => addRole(hire.role, hire.salary, hire.startMonth));
+                        }
+                        addToChatHistory(parsed.analysis, 'ai');
+                        updateUI();
+                    } catch (e) {
+                        addToChatHistory("I've processed your request and updated the financial model.", 'ai');
+                    }
+                }
+            }
+
+            function addToChatHistory(text, sender) {
+                const div = document.createElement('div');
+                div.className = sender === 'user' ? 'text-right' : 'text-left';
+                const bgColor = sender === 'user' ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-slate-700';
+                const textColor = sender === 'user' ? 'text-white' : 'text-slate-800 dark:text-white';
+                div.innerHTML = `<p class="inline-block p-2 rounded-lg ${bgColor} ${textColor}">${text}</p>`;
+                elements.chatHistory.appendChild(div);
+                elements.chatHistory.scrollTop = elements.chatHistory.scrollHeight;
+            }
+
+            // ** 2. Advanced Headcount **
+            function addRole(role = '', salary = 100000, startMonth = 0) {
+                const id = `role-${Date.now()}`;
+                const newRole = { id, role, salary, startMonth };
+                headcount.push(newRole);
+                renderHeadcount();
+                updateUI();
+            }
+
+            function removeRole(id) {
+                headcount = headcount.filter(r => r.id !== id);
+                renderHeadcount();
+                updateUI();
+            }
+
+            function updateRole(id, field, value) {
+                const role = headcount.find(r => r.id === id);
+                if(role) role[field] = value;
+                updateUI();
+            }
+
+            function renderHeadcount() {
+                elements.headcountList.innerHTML = '';
+                headcount.forEach(role => {
+                    const el = document.createElement('div');
+                    el.className = 'grid grid-cols-3 gap-2 items-center';
+                    el.innerHTML = `
+                        <input value="${role.role}" placeholder="Role" oninput="window.updateRole('${role.id}', 'role', this.value)" class="col-span-3 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white border border-slate-300 dark:border-slate-600 p-1 rounded-md text-sm">
+                        <input value="${role.salary}" type="number" oninput="window.updateRole('${role.id}', 'salary', parseInt(this.value) || 0)" class="bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white border border-slate-300 dark:border-slate-600 p-1 rounded-md text-sm">
+                        <input value="${role.startMonth}" type="number" oninput="window.updateRole('${role.id}', 'startMonth', parseInt(this.value) || 0)" class="bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white border border-slate-300 dark:border-slate-600 p-1 rounded-md text-sm">
+                        <button onclick="window.removeRole('${role.id}')" class="text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300">X</button>
+                    `;
+                    elements.headcountList.appendChild(el);
+                });
+            }
+
+            // Expose functions to global scope for inline event handlers
+            window.updateRole = updateRole;
+            window.removeRole = removeRole;
+
+            // ** 3. AI Insights **
+            function startInsightEngine() {
+                // Mock transaction generator
+                setInterval(() => {
+                    const isRevenue = Math.random() > 0.7;
+                    mockTransactions.push({
+                        date: new Date(),
+                        amount: (isRevenue ? 1 : -1) * (Math.random() * 50000),
+                        description: isRevenue ? "New Customer Payment" : "Software Subscription"
+                    });
+                    
+                    // Add mock insights
+                    if (mockTransactions.length % 3 === 0) {
+                        const insights = [
+                            "Revenue velocity increased 15% this month",
+                            "Marketing spend efficiency improved",
+                            "Customer acquisition costs trending down",
+                            "Subscription renewals above target",
+                            "Operating expenses within budget"
+                        ];
+                        const insight = insights[Math.floor(Math.random() * insights.length)];
+                        const p = document.createElement('p');
+                        p.className = "bg-slate-100 dark:bg-slate-800 p-2 rounded-md border-l-4 border-amber-400";
+                        p.textContent = insight;
+                        if (elements.insightsPanel.firstChild && elements.insightsPanel.firstChild.textContent.startsWith("AI is monitoring")) {
+                             elements.insightsPanel.innerHTML = '';
+                        }
+                        elements.insightsPanel.prepend(p);
+                    }
+                }, 10000);
+            }
+
+            // ** 4. Risk Modeling **
+            async function runRiskSimulation() {
+                showToast("Running risk simulation...");
+                
+                // Mock risk simulation
+                const worstCase = [], bestCase = [], likelyCase = [];
+                const inputs = getInputs();
+                const baseResult = calculateForecast(inputs);
+                
+                for (let i = 0; i < chartLabels.length; i++) {
+                    const baseValue = baseResult.forecastData[i] || 0;
+                    worstCase.push(Math.max(0, baseValue * 0.7)); // 30% worse
+                    bestCase.push(baseValue * 1.3); // 30% better
+                    likelyCase.push(baseValue * 0.9); // 10% worse (likely)
+                }
+                
+                createChart(true);
+                updateChartData({ worstCase, bestCase, likelyCase });
+                elements.runRiskSim.classList.add('hidden');
+                elements.clearRiskSim.classList.remove('hidden');
+            }
+
+            function clearRiskSimulation() {
+                createChart(false);
+                updateUI();
+                elements.runRiskSim.classList.remove('hidden');
+                elements.clearRiskSim.classList.add('hidden');
+            }
+
+            // ** 5. Generate Memo **
+            function openMemoModal() {
+                elements.memoModal.classList.remove('hidden');
+                setTimeout(() => {
+                    elements.memoBackdrop.classList.remove('opacity-0');
+                    elements.memoContent.classList.remove('opacity-0', 'scale-95');
+                }, 10);
+            }
+
+            function closeMemoModal() {
+                elements.memoBackdrop.classList.add('opacity-0');
+                elements.memoContent.classList.add('opacity-0', 'scale-95');
+                setTimeout(() => {
+                    elements.memoModal.classList.add('hidden');
+                }, 300);
+            }
+            
+            async function generateMemo() {
+                openMemoModal();
+                elements.memoText.textContent = '';
+                elements.memoSpinner.classList.remove('hidden');
+
+                const memo = await mockGeminiCall('CEO writing a brief memo');
+                elements.memoSpinner.classList.add('hidden');
+                elements.memoText.textContent = memo || "Could not generate memo. Please try again.";
+            }
+            
+            // --- Core Calculation & UI Update ---
+            function getInputs() {
+                return {
+                    monthlySpend: parseInt(elements.spendInput.value) || 0,
+                    oneTimeSpend: parseInt(elements.oneTimeSpendInput.value) || 0,
+                    priceIncrease: parseInt(elements.priceInput.value) || 0,
+                };
+            }
+
+            function applyInputs(inputs) {
+                elements.spendInput.value = inputs.monthlySpend;
+                elements.oneTimeSpendInput.value = inputs.oneTimeSpend;
+                elements.priceInput.value = inputs.priceIncrease;
+            }
+            
+            function calculateForecast(inputs, isSim = false, simParams = {}) {
+                let currentBalance = initialData.bankBalance - (inputs.oneTimeSpend + (simParams.oneTimeCostImpact || 0));
+                const forecast = [currentBalance];
+
+                const localHeadcount = inputs.headcount || headcount;
+
+                for (let month = 1; month < chartLabels.length; month++) {
+                    const monthlyHeadcountCost = localHeadcount.filter(r => r.startMonth < month).reduce((sum, r) => sum + r.salary, 0);
+                    const monthlyRevenue = initialData.monthlyRevenue * (1 + inputs.priceIncrease / 100) * (1 + (simParams.monthlyRevenueImpact || 0));
+                    const monthlyBurn = (initialData.monthlyCosts + inputs.monthlySpend + monthlyHeadcountCost) - monthlyRevenue;
+                    currentBalance -= monthlyBurn;
+                    forecast.push(Math.max(0, currentBalance));
+                }
+                
+                // Simplified runway calc for display
+                const firstMonthHeadcount = localHeadcount.reduce((sum, r) => sum + r.salary, 0);
+                const displayBurn = (initialData.monthlyCosts + inputs.monthlySpend + firstMonthHeadcount) - (initialData.monthlyRevenue * (1 + inputs.priceIncrease / 100));
+                const displayRunway = displayBurn > 0 ? (initialData.bankBalance - inputs.oneTimeSpend) / displayBurn : Infinity;
+
+                return { runway: displayRunway, burn: displayBurn, forecastData: forecast };
+            }
+            
+            function updateUI() {
+                scenarioCounter++;
+                const inputs = getInputs();
+                
+                const baseResult = calculateForecast({ monthlySpend: 0, oneTimeSpend: 0, priceIncrease: 0, headcount: [] }); 
+                const currentResult = calculateForecast(inputs);
+
+                elements.runwayMetric.innerHTML = `<span class="text-slate-500 dark:text-slate-400 line-through">${formatRunway(baseResult.runway)}</span><span class="ml-2">${formatRunway(currentResult.runway)}</span>`;
+                elements.burnMetric.textContent = `${formatCurrency(currentResult.burn)}`;
+
+                updateChartData({ base: baseResult.forecastData, current: currentResult.forecastData });
+                elements.usageCounter.textContent = `Scenarios: ${scenarioCounter}`;
+            }
+            
+            function updateChartData({base, current, scenarioA, scenarioB, worstCase, bestCase, likelyCase}) {
+                if (!runwayChart) return;
+                
+                if (base) runwayChart.data.datasets[0].data = base;
+                if (scenarioA) { runwayChart.data.datasets[1].data = scenarioA; runwayChart.data.datasets[1].hidden = false; }
+                if (scenarioB) { runwayChart.data.datasets[2].data = scenarioB; runwayChart.data.datasets[2].hidden = false; }
+
+                if (worstCase) runwayChart.data.datasets[3].data = worstCase;
+                if (bestCase) runwayChart.data.datasets[4].data = bestCase;
+                if (likelyCase) runwayChart.data.datasets[5].data = likelyCase;
+
+                if(current) {
+                    const isRiskSimActive = !elements.clearRiskSim.classList.contains('hidden');
+                    const currentDatasetIndex = isRiskSimActive ? 5 : 3;
+                    if (runwayChart.data.datasets[currentDatasetIndex]) {
+                         runwayChart.data.datasets[currentDatasetIndex].data = current;
+                    }
+                }
+                
+                runwayChart.update();
+            }
+
+            // ** 6. Enhanced Export Functionality **
+            function exportToCSV() {
+                const inputs = getInputs();
+                const baseResult = calculateForecast({ monthlySpend: 0, oneTimeSpend: 0, priceIncrease: 0, headcount: [] });
+                const currentResult = calculateForecast(inputs);
+                
+                const csvData = [
+                    ['Metric', 'Base Case', 'Current Scenario'],
+                    ['Runway (months)', baseResult.runway.toFixed(1), currentResult.runway.toFixed(1)],
+                    ['Monthly Burn (₹)', baseResult.burn.toLocaleString(), currentResult.burn.toLocaleString()],
+                    ['Monthly Spend (₹)', '0', inputs.monthlySpend.toLocaleString()],
+                    ['One-time Spend (₹)', '0', inputs.oneTimeSpend.toLocaleString()],
+                    ['Price Change (%)', '0', inputs.priceIncrease],
+                    [''],
+                    ['Month', 'Base Forecast', 'Current Forecast'],
+                    ...Array.from({ length: 25 }, (_, i) => [
+                        `M${i}`,
+                        baseResult.forecastData[i]?.toLocaleString() || '',
+                        currentResult.forecastData[i]?.toLocaleString() || ''
+                    ])
+                ];
+                
+                const csvContent = csvData.map(row => row.join(',')).join('\n');
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `runway-forecast-${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+                showToast('Financial data exported to CSV!');
+            }
+
+            // --- EVENT LISTENERS ---
+            allInputs.forEach(input => input.addEventListener('input', updateUI));
+            elements.resetButton.addEventListener('click', () => {
+                applyInputs({ monthlySpend: 0, oneTimeSpend: 0, priceIncrease: 0 });
+                headcount = [];
+                renderHeadcount();
+                clearRiskSimulation();
+                updateUI();
+            });
+            elements.chatSend.addEventListener('click', handleChat);
+            elements.chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleChat(); });
+            elements.addRoleButton.addEventListener('click', () => addRole());
+            elements.runRiskSim.addEventListener('click', runRiskSimulation);
+            elements.clearRiskSim.addEventListener('click', clearRiskSimulation);
+            elements.exportDataBtn.addEventListener('click', exportToCSV);
+            
+            elements.generateMemoButton.addEventListener('click', generateMemo);
+            elements.closeMemoButton.addEventListener('click', closeMemoModal);
+            elements.memoBackdrop.addEventListener('click', closeMemoModal);
+            elements.copyMemoButton.addEventListener('click', () => {
+                navigator.clipboard.writeText(elements.memoText.textContent);
+                showToast("Memo copied to clipboard!");
+            });
+
+            // Scenario saving, sharing etc.
+            function setupScenarioSaving(type) {
+                const saveBtn = type === 'A' ? elements.saveScenarioA : elements.saveScenarioB;
+                const clearBtn = type === 'A' ? elements.clearScenarioA : elements.clearScenarioB;
+                const runwayEl = type === 'A' ? elements.scenarioARunway : elements.scenarioBRunway;
+                const chartIndex = type === 'A' ? 1 : 2;
+
+                saveBtn.addEventListener('click', () => {
+                    const inputs = getInputs();
+                    const scenarioHeadcount = JSON.parse(JSON.stringify(headcount)); // Deep copy
+                    const { runway, forecastData } = calculateForecast({...inputs, headcount: scenarioHeadcount});
+                    
+                    if (type === 'A') savedScenarioA = { inputs, headcount: scenarioHeadcount, runway, forecastData };
+                    else savedScenarioB = { inputs, headcount: scenarioHeadcount, runway, forecastData };
+                    
+                    runwayEl.textContent = formatRunway(runway);
+                    updateChartData({ [type === 'A' ? 'scenarioA' : 'scenarioB']: forecastData });
+                    clearBtn.classList.remove('hidden');
+                    showToast(`Scenario ${type} saved.`);
+                });
+
+                clearBtn.addEventListener('click', () => {
+                    if (type === 'A') savedScenarioA = null;
+                    else savedScenarioB = null;
+                    
+                    runwayEl.textContent = 'Not Saved';
+                    if (runwayChart && runwayChart.data.datasets[chartIndex]) {
+                        runwayChart.data.datasets[chartIndex].hidden = true;
+                        runwayChart.update();
+                    }
+                    clearBtn.classList.add('hidden');
+                });
+            }
+            setupScenarioSaving('A');
+            setupScenarioSaving('B');
+
+            elements.shareButton.addEventListener('click', async () => {
+                showToast("Sharing functionality would integrate with backend services");
+            });
+
+            // --- INITIAL LOAD ---
+            updateThemeIcons(document.documentElement.classList.contains('dark'));
+            createChart();
+            startInsightEngine();
+            updateUI();
+        });
+    </script>
+</body>
+</html>
